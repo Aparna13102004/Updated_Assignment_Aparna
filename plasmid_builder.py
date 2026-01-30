@@ -5,9 +5,9 @@ from restriction_sites import RESTRICTION_SITES
 
 
 def read_design(design_path):
-    sites = []
-    antibiotic_genes = []
-    reporter_genes = []
+    sites = list()
+    antibiotic_genes = list()
+    reporter_genes = list()
 
     with open(design_path) as handle:
         for line in handle:
@@ -30,13 +30,12 @@ def read_design(design_path):
 
 
 def fetch_marker(marker):
-    file_path = os.path.join("markers", f"{marker}.fa")
+    file_path = os.path.join("markers", marker + ".fa")
     if not os.path.isfile(file_path):
-        print(f"[WARN] Marker missing, skipped: {marker}")
+        print(f"[WARNING] Marker is missing, skipping: {marker}")
         return ""
 
-    record = SeqIO.read(file_path, "fasta")
-    return str(record.seq)
+    return str(SeqIO.read(file_path, "fasta").seq)
 
 
 def purge_restriction_sites(sequence, enzymes):
@@ -52,7 +51,7 @@ def purge_restriction_sites(sequence, enzymes):
 def build_plasmid(genome_fasta, design_file):
     # ORI detection
     ori_sequence, ori_start, ori_end = find_ori_multi_scale(genome_fasta)
-    print(f"Detected ORI region: {ori_start}-{ori_end}")
+    print("ORI region:" + ori_start + "-" + ori_end)
 
     sites, antibiotics, reporters = read_design(design_file)
 
@@ -60,18 +59,18 @@ def build_plasmid(genome_fasta, design_file):
 
     # Add antibiotic resistance genes
     for gene in antibiotics:
-        plasmid_seq += fetch_marker(gene)
+        plasmid_seq = plasmid_seq + fetch_marker(gene)
 
     # Add screening / reporter genes
     for gene in reporters:
-        plasmid_seq += fetch_marker(gene)
+        plasmid_seq = plasmid_seq + fetch_marker(gene)
 
     # Add restriction sites
     for site in sites:
         if site in RESTRICTION_SITES:
-            plasmid_seq += RESTRICTION_SITES[site]
+            plasmid_seq = plasmid_seq + RESTRICTION_SITES[site]
         else:
-            print(f"[WARN] Unknown restriction site skipped: {site}")
+            print("[WARNING] Unknown restriction site skipping:" + site)
 
     # Remove all restriction motifs globally
     plasmid_seq = purge_restriction_sites(plasmid_seq, RESTRICTION_SITES.keys())
