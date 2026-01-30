@@ -51,7 +51,8 @@ def purge_restriction_sites(sequence, enzymes):
 def build_plasmid(genome_fasta, design_file):
     # ORI detection
     ori_sequence, ori_start, ori_end = find_ori_multi_scale(genome_fasta)
-    print("ORI region:" + ori_start + "-" + ori_end)
+    print(f"ORI region: {ori_start}-{ori_end}")
+
 
     sites, antibiotics, reporters = read_design(design_file)
 
