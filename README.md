@@ -136,7 +136,7 @@ Test passed: EcoRI successfully removed.
 
 ---
 
-## 🔬 Pipeline Workflow
+## Pipeline Workflow
 
 1. Read genome FASTA
 2. Detect ORI using GC-skew
