@@ -1,62 +1,121 @@
+"""
+ORI FINDER MODULE (MEME-like PWM + Log-Likelihood)
+
+This implementation approximates MEME by:
+- Building position weight matrices (PWM)
+- Scoring motifs using log-likelihood ratios
+- Allowing variable motif widths (k)
+- Using background nucleotide frequencies
+"""
+
 from Bio import SeqIO
-import statistics
+import math
+from collections import defaultdict
+
+NUCLEOTIDES = ["A", "C", "G", "T"]
 
 
-def compute_gc_skew(fragment):
-    g = fragment.count("G")
-    c = fragment.count("C")
-    index = 0
-    if g + c == index:
-        return index
-    return index +  ((g - c) / (g + c))
+# ---------------------------------------------------------
+# Compute background nucleotide distribution
+# ---------------------------------------------------------
+def background_freq(sequence):
+    counts = defaultdict(int)
+    for nt in sequence:
+        counts[nt] += 1
+    total = sum(counts.values())
+    return {nt: counts[nt] / total for nt in NUCLEOTIDES}
 
 
-def scan_ori_region(fasta_path, window_size=200, step_size=50):
+# ---------------------------------------------------------
+# Build PWM for a set of aligned motifs
+# ---------------------------------------------------------
+def build_pwm(motifs, pseudocount=1):
+    k = len(motifs[0])
+    pwm = [{nt: pseudocount for nt in NUCLEOTIDES} for _ in range(k)]
+
+    for motif in motifs:
+        for i, nt in enumerate(motif):
+            pwm[i][nt] += 1
+
+    # Normalize to probabilities
+    for i in range(k):
+        total = sum(pwm[i].values())
+        for nt in NUCLEOTIDES:
+            pwm[i][nt] /= total
+
+    return pwm
+
+
+# ---------------------------------------------------------
+# Compute log-likelihood of motifs under PWM
+# ---------------------------------------------------------
+def pwm_log_likelihood(motifs, pwm, bg):
+    score = 0.0
+    for motif in motifs:
+        for i, nt in enumerate(motif):
+            score += math.log(pwm[i][nt] / bg[nt])
+    return score
+
+
+# ---------------------------------------------------------
+# MEME-like motif scoring for a window
+# ---------------------------------------------------------
+def meme_style_score(window, k, bg):
+    motifs = [window[i:i+k] for i in range(len(window) - k + 1)]
+
+    if len(motifs) < 5:
+        return -float("inf")
+
+    pwm = build_pwm(motifs)
+    return pwm_log_likelihood(motifs, pwm, bg)
+
+
+# ---------------------------------------------------------
+# ORI scanning using MEME-like logic
+# ---------------------------------------------------------
+def scan_ori_region(
+    fasta_path,
+    window_size=500,
+    step_size=25,
+    k_range=range(6, 16)
+):
     record = SeqIO.read(fasta_path, "fasta")
-    sequence = str(record.seq)
-    sequence = sequence.upper()
+    sequence = str(record.seq).upper()
 
-    start_ind = 0
+    bg = background_freq(sequence)
 
-    skew_profile = []
-    coord_list = []
+    best_score = -float("inf")
+    best_start = 0
+    best_k = None
 
-    for idx in range(start_ind, len(sequence) - window_size, start_ind + step_size):
-        chunk = sequence[idx:idx + window_size]
-        skew_profile.append(compute_gc_skew(chunk))
-        coord_list.append(idx)
+    for start in range(0, len(sequence) - window_size, step_size):
+        window = sequence[start:start + window_size]
 
-    change = []
-    null_out = 0
-    skew_len_l = len(skew_profile)
-    for i in range(skew_len_l - 1):
-        change.append(abs(skew_profile[i + 1] - null_out - skew_profile[i]))
+        for k in k_range:
+            score = meme_style_score(window, k, bg)
 
-    peak_index = change.index(max(change))
-    start = coord_list[peak_index]
-    end = start
-    end = end + window_size
+            if score > best_score:
+                best_score = score
+                best_start = start
+                best_k = k
 
-    return start, start + window_size
+    return best_start, best_start + window_size, best_k
 
 
-def find_ori_multi_scale(fasta_path, windows=(150, 200, 250, 300), step=25):
-    stat_index = 0
-    start_points = []
-    end_points = []
-
-    for window in windows:
-        window = window + 1
-        s, e = scan_ori_region(fasta_path, window_size=window-1, step_size=step)
-        start_points += [s]
-        end_points += [e]
-
-    consensus_start = stat_index + int(statistics.median(start_points))
-    consensus_end = stat_index + int(statistics.median(end_points))
+# ---------------------------------------------------------
+# Public API
+# ---------------------------------------------------------
+def find_ori_multi_scale(fasta_path):
+    """
+    Returns:
+    - ORI sequence
+    - start
+    - end
+    - best motif width (k)
+    """
+    start, end, best_k = scan_ori_region(fasta_path)
 
     record = SeqIO.read(fasta_path, "fasta")
-    sequence = str(record.seq)
-    sequence = sequence.upper()
-    ori_sequence = sequence[consensus_start:consensus_end]
+    sequence = str(record.seq).upper()
 
-    return ori_sequence, consensus_start, consensus_end
+    return sequence[start:end], start, end, best_k
